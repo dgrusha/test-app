@@ -4,6 +4,10 @@
 name: Java CI with Maven
 
 on: [ push ]
+permissions:
+  id-token: write
+  attestations: write
+  contents: read
 
 jobs:
   calculate-version:
@@ -103,6 +107,42 @@ jobs:
           name: app
           path: target/*.jar
           retention-days: 10
+      - name: SBOM for JAR
+        uses: anchore/sbom-action@v0
+        with:
+          path: target/
+          format: spdx-json
+          scan-type: 'file'
+          output-file: sbom.spdx.json
+      - name: Upload SBOM
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom-jar
+          path: sbom.spdx.json
+      - name: Attest SBOM (JAR)
+        uses: actions/attest-sbom@v1
+        with:
+          subject-path: target/*.jar
+          sbom-path: sbom.spdx.json
+      - name: Dependency Check
+        uses: dependency-check/Dependency-Check_Action@main
+        env:
+          JAVA_HOME: /opt/jdk
+        id: Depcheck
+        continue-on-error: true
+        with:
+          project: 'test-app'
+          path: '.'
+          format: 'HTML'
+          out: 'reports'
+          args: >
+            --failOnCVSS 7
+            -- enableRetired
+      - name: Upload dependency check results
+        uses: actions/upload-artifact@v4
+        with:
+          name: Depcheck report
+          path: ${{github.workspace}}/reports
   docker:
     runs-on: ubuntu-latest
     needs: [calculate-version, build]
@@ -131,6 +171,22 @@ jobs:
           platforms: linux/amd64,linux/arm64
           push: true
           tags: s22228/test-app:${{ needs.calculate-version.outputs.version }}
+      - name: SBOM for Docker
+        uses: anchore/sbom-action@v0
+        with:
+          image: docker.io/s22228/test-app:latest
+          format: spdx-json
+          output-file: sbom.spdx.json
+      - name: Upload SBOM for Docke
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom-docker
+          path: sbom.spdx.json
+      - name: Attest SBOM (Docker)
+        uses: actions/attest-sbom@v1
+        with:
+          subject-path: docker.io/s22228/test-app:${{ needs.calculate-version.outputs.version }}
+          sbom-path: sbom.spdx.json
   trigger-deploy:
     runs-on: ubuntu-latest
     needs: [ calculate-version, docker ]
