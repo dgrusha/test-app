@@ -5,7 +5,9 @@ name: Java CI with Maven
 
 on: [ push ]
 permissions:
-  id-token: write 
+  id-token: write
+  attestations: write
+  contents: read
 
 jobs:
   calculate-version:
